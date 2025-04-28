@@ -1,0 +1,51 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  backend:
+    build:
+      context: ./MTG-Mox
+    develop:
+      watch:
+        - action: sync
+          path: ./MTG-Mox
+          target: /app
+          ignore:
+            - target/
+            - .git/
+            - node_modules/
+        - action: rebuild
+          path: ./MTG-Mox/pom.xml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`backend.localhost`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8080"
+    depends_on:
+      - traefik
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      - CHOKIDAR_USEPOLLING=true  # Enable file watching with polling
+    volumes:
+      - ./frontend:/app  # Sync the frontend project directory with /app in the container
+      - /app/node_modules  # Ensure node_modules doesn't get overwritten
+    working_dir: /app  # Set the working directory inside the container to /app
+    ports:
+      - "5173:5173"  # Expose port 5173 for the Vite dev server
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`frontend.localhost`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
+    depends_on:
+      - traefik
